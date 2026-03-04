@@ -46,11 +46,15 @@ HIND_SQUADRON.FATIGUE = {
   EXHAUSTED = "Exhausted",
 }
 
+-- Persistence (Saved Games\DCS by default when lfs is available)
+HIND_SQUADRON.StateFileName = "HindSquadronState.lua"
+HIND_SQUADRON.StateFilePath = nil
+
 ----------------------------------------------------------------------
 -- INITIAL STATE
 ----------------------------------------------------------------------
 
-HIND_SQUADRON.State = {
+HIND_SQUADRON.DefaultState = {
   Turn = 1,
 
   -- Abstract “ammo/fuel” into a single campaign resource.
@@ -75,9 +79,50 @@ HIND_SQUADRON.State = {
   },
 }
 
+HIND_SQUADRON.State = {}
+
 ----------------------------------------------------------------------
 -- UTILS
 ----------------------------------------------------------------------
+
+local function _deepCopy(obj)
+  if type(obj) ~= "table" then return obj end
+  local res = {}
+  for k, v in pairs(obj) do
+    res[_deepCopy(k)] = _deepCopy(v)
+  end
+  return res
+end
+
+local function _mergeDefaults(defaults, data)
+  if type(defaults) ~= "table" then
+    if data ~= nil then return data end
+    return defaults
+  end
+
+  local result = {}
+  for k, v in pairs(defaults) do
+    if type(v) == "table" then
+      result[k] = _mergeDefaults(v, type(data) == "table" and data[k] or nil)
+    else
+      if type(data) == "table" and data[k] ~= nil then
+        result[k] = data[k]
+      else
+        result[k] = v
+      end
+    end
+  end
+
+  if type(data) == "table" then
+    for k, v in pairs(data) do
+      if result[k] == nil then
+        result[k] = v
+      end
+    end
+  end
+
+  return result
+end
 
 local function _isInSet(value, setTable)
   for _, v in pairs(setTable) do
@@ -100,6 +145,78 @@ local function _clamp(n, lo, hi)
 end
 
 ----------------------------------------------------------------------
+-- PERSISTENCE
+--
+-- Requires io + lfs to be de-sanitized in MissionScripting.lua.
+-- Uses MOOSE UTILS.SaveToFile/LoadFromFile with default path.
+----------------------------------------------------------------------
+
+function HIND_SQUADRON:_GetStateFile()
+  return self.StateFilePath, self.StateFileName
+end
+
+function HIND_SQUADRON:_WarnPersistOnce(msg)
+  if self._PersistWarned then return end
+  self._PersistWarned = true
+  env.info("HIND_SQUADRON: " .. msg)
+end
+
+function HIND_SQUADRON:SaveState()
+  if not UTILS or not UTILS.SaveToFile or not UTILS.OneLineSerialize then
+    self:_WarnPersistOnce("MOOSE UTILS not available; persistence disabled.")
+    return false
+  end
+
+  local path, filename = self:_GetStateFile()
+  local payload = "return " .. UTILS.OneLineSerialize(self.State)
+  local ok = UTILS.SaveToFile(path, filename, payload)
+  if not ok then
+    self:_WarnPersistOnce("Save failed. Ensure io and lfs are desanitized.")
+  end
+  return ok
+end
+
+function HIND_SQUADRON:LoadState()
+  if not UTILS or not UTILS.CheckFileExists or not UTILS.LoadFromFile then
+    self:_WarnPersistOnce("MOOSE UTILS not available; persistence disabled.")
+    return false
+  end
+
+  local path, filename = self:_GetStateFile()
+  if not UTILS.CheckFileExists(path, filename) then
+    return false
+  end
+
+  local ok, lines = UTILS.LoadFromFile(path, filename)
+  if not ok or not lines then
+    self:_WarnPersistOnce("Load failed. Ensure io and lfs are desanitized.")
+    return false
+  end
+
+  local chunk = table.concat(lines, "\n")
+  local loader = loadstring or load
+  if not loader then
+    self:_WarnPersistOnce("Load failed: no Lua loader available.")
+    return false
+  end
+
+  local f, err = loader(chunk)
+  if not f then
+    self:_WarnPersistOnce("Load failed: " .. tostring(err))
+    return false
+  end
+
+  local data = f()
+  if type(data) ~= "table" then
+    self:_WarnPersistOnce("Load failed: state file is not a table.")
+    return false
+  end
+
+  self.State = _mergeDefaults(self.DefaultState, data)
+  return true
+end
+
+----------------------------------------------------------------------
 -- CORE: AIRFRAMES
 ----------------------------------------------------------------------
 
@@ -107,7 +224,7 @@ function HIND_SQUADRON:GetAirframe(id)
   return _findById(self.State.Airframes, id)
 end
 
-function HIND_SQUADRON:SetAirframeDamage(id, damage)
+function HIND_SQUADRON:SetAirframeDamage(id, damage, suppressSave)
   if not _isInSet(damage, self.DAMAGE) then
     env.info(("HIND_SQUADRON: invalid damage '%s'"):format(tostring(damage)))
     return false
@@ -120,6 +237,7 @@ function HIND_SQUADRON:SetAirframeDamage(id, damage)
   end
 
   af.Damage = damage
+  if not suppressSave then self:SaveState() end
   return true
 end
 
@@ -137,7 +255,7 @@ function HIND_SQUADRON:GetPilot(id)
   return _findById(self.State.Pilots, id)
 end
 
-function HIND_SQUADRON:SetPilotFatigue(id, fatigue)
+function HIND_SQUADRON:SetPilotFatigue(id, fatigue, suppressSave)
   if not _isInSet(fatigue, self.FATIGUE) then
     env.info(("HIND_SQUADRON: invalid fatigue '%s'"):format(tostring(fatigue)))
     return false
@@ -150,11 +268,12 @@ function HIND_SQUADRON:SetPilotFatigue(id, fatigue)
   end
 
   p.Fatigue = fatigue
+  if not suppressSave then self:SaveState() end
   return true
 end
 
 -- Simple fatigue progression for “a sortie was flown”
-function HIND_SQUADRON:ApplySortieFatigue(pilotId)
+function HIND_SQUADRON:ApplySortieFatigue(pilotId, suppressSave)
   local p = self:GetPilot(pilotId)
   if not p then return false end
 
@@ -163,11 +282,12 @@ function HIND_SQUADRON:ApplySortieFatigue(pilotId)
   elseif p.Fatigue == self.FATIGUE.TIRED then
     p.Fatigue = self.FATIGUE.EXHAUSTED
   end
+  if not suppressSave then self:SaveState() end
   return true
 end
 
 -- Simple recovery when advancing turns (sleep/rotation)
-function HIND_SQUADRON:RecoverPilotFatigueAll()
+function HIND_SQUADRON:RecoverPilotFatigueAll(suppressSave)
   for _, p in ipairs(self.State.Pilots) do
     if p.Fatigue == self.FATIGUE.EXHAUSTED then
       p.Fatigue = self.FATIGUE.TIRED
@@ -175,20 +295,23 @@ function HIND_SQUADRON:RecoverPilotFatigueAll()
       p.Fatigue = self.FATIGUE.FRESH
     end
   end
+  if not suppressSave then self:SaveState() end
 end
 
 ----------------------------------------------------------------------
 -- CORE: SUPPLY
 ----------------------------------------------------------------------
 
-function HIND_SQUADRON:AddSupply(points)
+function HIND_SQUADRON:AddSupply(points, suppressSave)
   self.State.SupplyPoints = _clamp(self.State.SupplyPoints + points, 0, 999)
+  if not suppressSave then self:SaveState() end
 end
 
-function HIND_SQUADRON:SpendSupply(points)
+function HIND_SQUADRON:SpendSupply(points, suppressSave)
   points = math.max(0, points)
   if self.State.SupplyPoints < points then return false end
   self.State.SupplyPoints = self.State.SupplyPoints - points
+  if not suppressSave then self:SaveState() end
   return true
 end
 
@@ -201,10 +324,12 @@ function HIND_SQUADRON:AdvanceTurn()
   self.State.Turn = self.State.Turn + 1
 
   -- MVP: fatigue recovery happens between turns.
-  self:RecoverPilotFatigueAll()
+  self:RecoverPilotFatigueAll(true)
 
   -- MVP: small resupply drip each turn (tune to taste)
-  self:AddSupply(2)
+  self:AddSupply(2, true)
+
+  self:SaveState()
 
   self:Announce(("Turn advanced to %d. Pilots recovered, +2 Supply."):format(self.State.Turn), 10)
 end
@@ -342,6 +467,11 @@ end
 ----------------------------------------------------------------------
 
 function HIND_SQUADRON:Start()
+  self.State = _deepCopy(self.DefaultState)
+  local loaded = self:LoadState()
+  if loaded then
+    self:Announce("Hind Squadron Campaign State loaded from disk.", 8)
+  end
   self:EnableAirframeEnforcement()
   self:InitMenu()
   self:Announce("Hind Squadron Campaign State initialized. Use F10 menu: Hind Squadron (Campaign).", 12)

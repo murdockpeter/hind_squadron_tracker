@@ -26,6 +26,7 @@ When a player spawns into a group whose name matches one of these airframes, the
 
 - DCS World mission using MOOSE.
 - `Moose.lua` must be loaded **before** `hind_squadron_tracker.lua`.
+- To persist state between runs, DCS must allow `io` and `lfs` (edit `MissionScripting.lua`).
 
 ## Mission Editor Setup
 
@@ -80,6 +81,19 @@ The state is held in `HIND_SQUADRON.State`:
 - Adds +2 supply points.
 - Announces the change.
 
+### Persistence
+
+If a saved state file is present, it is loaded at mission start. If not, the default state is used.
+Changes are saved automatically when state-mutating functions are called.
+
+Default save location:
+
+- `Saved Games\DCS\HindSquadronState.lua` (when `lfs` is available)
+
+Optional customization:
+
+- You can change the save location/filename by editing `HIND_SQUADRON.StateFilePath` and `HIND_SQUADRON.StateFileName` in `hind_squadron_tracker.lua`.
+
 ### UI / Reporting
 
 - `BuildStatusText()` produces a multi‑line status report.
@@ -116,7 +130,8 @@ This is a load confirmation and can be removed once your mission is stable.
 - **No “HIND script loaded” message**: the script file is not being executed.
 - **Slots not blocked**: group names don’t match `HIND-01`..`HIND-04`.
 
+- **State not saving/loading**: `io` and `lfs` are still sanitized in `MissionScripting.lua` or the state file path is invalid.
+
 ## File
 
 - `hind_squadron_tracker.lua`
-
