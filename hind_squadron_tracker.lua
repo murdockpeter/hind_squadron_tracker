@@ -124,6 +124,32 @@ local function _mergeDefaults(defaults, data)
   return result
 end
 
+local function _serializeLua(value)
+  local t = type(value)
+  if t == "number" then
+    return tostring(value)
+  elseif t == "boolean" then
+    return tostring(value)
+  elseif t == "string" then
+    return string.format("%q", value)
+  elseif t == "table" then
+    local parts = {"{"}
+    for k, v in pairs(value) do
+      local key
+      if type(k) == "string" and k:match("^[%a_][%w_]*$") then
+        key = k
+      else
+        key = "[" .. _serializeLua(k) .. "]"
+      end
+      parts[#parts + 1] = key .. "=" .. _serializeLua(v) .. ","
+    end
+    parts[#parts + 1] = "}"
+    return table.concat(parts)
+  else
+    return "nil"
+  end
+end
+
 local function _isInSet(value, setTable)
   for _, v in pairs(setTable) do
     if v == value then return true end
@@ -162,13 +188,13 @@ function HIND_SQUADRON:_WarnPersistOnce(msg)
 end
 
 function HIND_SQUADRON:SaveState()
-  if not UTILS or not UTILS.SaveToFile or not UTILS.OneLineSerialize then
+  if not UTILS or not UTILS.SaveToFile then
     self:_WarnPersistOnce("MOOSE UTILS not available; persistence disabled.")
     return false
   end
 
   local path, filename = self:_GetStateFile()
-  local payload = "return " .. UTILS.OneLineSerialize(self.State)
+  local payload = "return " .. _serializeLua(self.State)
   local ok = UTILS.SaveToFile(path, filename, payload)
   if not ok then
     self:_WarnPersistOnce("Save failed. Ensure io and lfs are desanitized.")
@@ -470,7 +496,14 @@ function HIND_SQUADRON:Start()
   self.State = _deepCopy(self.DefaultState)
   local loaded = self:LoadState()
   if loaded then
-    self:Announce("Hind Squadron Campaign State loaded from disk.", 8)
+    local path, filename = self:_GetStateFile()
+    local loc = filename
+    if path then
+      loc = path .. "\\" .. filename
+    elseif lfs then
+      loc = lfs.writedir() .. "\\" .. filename
+    end
+    self:Announce("Hind Squadron Campaign State loaded from disk: " .. loc, 10)
   end
   self:EnableAirframeEnforcement()
   self:InitMenu()

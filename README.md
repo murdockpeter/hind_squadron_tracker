@@ -85,6 +85,7 @@ The state is held in `HIND_SQUADRON.State`:
 
 If a saved state file is present, it is loaded at mission start. If not, the default state is used.
 Changes are saved automatically when state-mutating functions are called.
+On successful load, an on-screen message shows the file path used.
 
 Default save location:
 
@@ -129,9 +130,9 @@ This is a load confirmation and can be removed once your mission is stable.
 - **No F10 menu**: MOOSE wasn’t loaded first, or the script didn’t run.
 - **No “HIND script loaded” message**: the script file is not being executed.
 - **Slots not blocked**: group names don’t match `HIND-01`..`HIND-04`.
-
 - **State not saving/loading**: `io` and `lfs` are still sanitized in `MissionScripting.lua` or the state file path is invalid.
 
 ## File
 
 - `hind_squadron_tracker.lua`
+
