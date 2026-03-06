@@ -62,7 +62,7 @@ The state is held in `HIND_SQUADRON.State`:
 - `IsAirframeFlyable(id)` returns `false` if `Major` or `Destroyed`.
 - In-mission events:
   - On `S_EVENT_HIT`/`S_EVENT_DAMAGE`, damage is set to `Minor` or `Major` based on remaining life.
-  - On `S_EVENT_DEAD`/`S_EVENT_CRASH`, damage is set to `Destroyed`.
+  - On `S_EVENT_DEAD`/`S_EVENT_CRASH`/`S_EVENT_COLLISION`/`S_EVENT_PILOT_DEAD`, damage is set to `Destroyed`.
 
 ### Pilots
 

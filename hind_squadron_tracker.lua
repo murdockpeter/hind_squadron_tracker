@@ -490,7 +490,11 @@ function HIND_SQUADRON._DcsEventHandler:onEvent(event)
     return
   end
 
-  if event.id == world.event.S_EVENT_DEAD or event.id == world.event.S_EVENT_CRASH then
+  if event.id == world.event.S_EVENT_DEAD
+    or event.id == world.event.S_EVENT_CRASH
+    or event.id == world.event.S_EVENT_COLLISION
+    or event.id == world.event.S_EVENT_PILOT_DEAD
+  then
     if HIND_SQUADRON:_WorseDamage(af.Damage, HIND_SQUADRON.DAMAGE.DESTROYED) then
       HIND_SQUADRON:SetAirframeDamage(groupName, HIND_SQUADRON.DAMAGE.DESTROYED)
     end
