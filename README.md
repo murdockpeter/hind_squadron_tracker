@@ -157,7 +157,7 @@ The menu is created under **F10 → Other → Hind Squadron (Campaign)**:
 
 - Show Squadron Status
 - Advance Turn (Between Sorties)
-- Test helpers: spend supply, apply fatigue, set damage states
+- Test helpers: spend supply, apply fatigue, set damage states, revive `PILOT-01`
 
 ## Debug Note
 

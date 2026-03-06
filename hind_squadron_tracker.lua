@@ -457,6 +457,10 @@ function HIND_SQUADRON:SetPilotDeadByPlayerName(playerName, suppressSave)
   return self:SetPilotStatus(p.Id, self.PILOT_STATUS.DEAD, suppressSave)
 end
 
+function HIND_SQUADRON:SetPilotAlive(id, suppressSave)
+  return self:SetPilotStatus(id, self.PILOT_STATUS.ALIVE, suppressSave)
+end
+
 -- Simple fatigue progression for “a sortie was flown”
 function HIND_SQUADRON:ApplySortieFatigue(pilotId, suppressSave)
   local p = self:GetPilot(pilotId)
@@ -692,6 +696,11 @@ function HIND_SQUADRON:InitMenu()
   MENU_MISSION_COMMAND:New("Apply Sortie Fatigue to PILOT-01 (Test)", self.MenuRoot, function()
     self:ApplySortieFatigue("PILOT-01")
     self:Announce("Applied sortie fatigue to PILOT-01.", 8)
+  end)
+
+  MENU_MISSION_COMMAND:New("Revive PILOT-01 (Test)", self.MenuRoot, function()
+    self:SetPilotAlive("PILOT-01")
+    self:Announce("Set PILOT-01 status to Alive.", 8)
   end)
 
   MENU_MISSION_COMMAND:New("Set HIND-01 Damage -> Minor (Test)", self.MenuRoot, function()
