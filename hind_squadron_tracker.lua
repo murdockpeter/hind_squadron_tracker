@@ -57,6 +57,10 @@ HIND_SQUADRON.FATIGUE = {
 HIND_SQUADRON.StateFileName = "HindSquadronState.lua"
 HIND_SQUADRON.StateFilePath = nil
 
+-- Optional pilot roster override (Saved Games\DCS by default when lfs is available)
+HIND_SQUADRON.PilotRosterFileName = "HindSquadronPilots.lua"
+HIND_SQUADRON.PilotRosterFilePath = nil
+
 ----------------------------------------------------------------------
 -- INITIAL STATE
 ----------------------------------------------------------------------
@@ -258,6 +262,101 @@ function HIND_SQUADRON:LoadState()
 
   self.State = _mergeDefaults(self.DefaultState, data)
   return true
+end
+
+function HIND_SQUADRON:_GetPilotRosterFile()
+  return self.PilotRosterFilePath, self.PilotRosterFileName
+end
+
+function HIND_SQUADRON:_NormalizePilotRoster(data)
+  if type(data) ~= "table" then return nil end
+
+  if type(data.Pilots) == "table" then
+    data = data.Pilots
+  end
+
+  local roster = {}
+
+  -- Array form: { "Name1", "Name2", ... } or { {Id=..., Name=...}, ... }
+  if data[1] ~= nil then
+    for i, v in ipairs(data) do
+      if type(v) == "string" then
+        roster[#roster + 1] = { Id = string.format("PILOT-%02d", i), Name = v }
+      elseif type(v) == "table" then
+        local id = v.Id or string.format("PILOT-%02d", i)
+        local name = v.Name or v[1]
+        if type(name) == "string" then
+          roster[#roster + 1] = { Id = id, Name = name }
+        end
+      end
+    end
+    return roster
+  end
+
+  -- Map form: { PILOT-01 = "Name", PILOT-02 = "Name" }
+  for k, v in pairs(data) do
+    if type(k) == "string" and type(v) == "string" then
+      roster[#roster + 1] = { Id = k, Name = v }
+    end
+  end
+
+  if #roster == 0 then return nil end
+  return roster
+end
+
+function HIND_SQUADRON:LoadPilotRoster()
+  if not UTILS or not UTILS.CheckFileExists or not UTILS.LoadFromFile then
+    self:_WarnPersistOnce("MOOSE UTILS not available; pilot roster override disabled.")
+    return nil
+  end
+
+  local path, filename = self:_GetPilotRosterFile()
+  if not UTILS.CheckFileExists(path, filename) then
+    return nil
+  end
+
+  local ok, lines = UTILS.LoadFromFile(path, filename)
+  if not ok or not lines then
+    self:_WarnPersistOnce("Pilot roster load failed. Ensure io and lfs are desanitized.")
+    return nil
+  end
+
+  local chunk = table.concat(lines, "\n")
+  local loader = loadstring or load
+  if not loader then
+    self:_WarnPersistOnce("Pilot roster load failed: no Lua loader available.")
+    return nil
+  end
+
+  local f, err = loader(chunk)
+  if not f then
+    self:_WarnPersistOnce("Pilot roster load failed: " .. tostring(err))
+    return nil
+  end
+
+  local data = f()
+  return self:_NormalizePilotRoster(data)
+end
+
+function HIND_SQUADRON:ApplyPilotRoster(targetPilots, roster)
+  if type(targetPilots) ~= "table" or type(roster) ~= "table" then return false end
+  local changed = false
+  for i, r in ipairs(roster) do
+    if r and r.Name then
+      local p = nil
+      if r.Id then
+        p = _findById(targetPilots, r.Id)
+      end
+      if not p and targetPilots[i] then
+        p = targetPilots[i]
+      end
+      if p and p.Name ~= r.Name then
+        p.Name = r.Name
+        changed = true
+      end
+    end
+  end
+  return changed
 end
 
 ----------------------------------------------------------------------
@@ -580,8 +679,17 @@ end
 ----------------------------------------------------------------------
 
 function HIND_SQUADRON:Start()
+  local roster = self:LoadPilotRoster()
+  if roster then
+    self:ApplyPilotRoster(self.DefaultState.Pilots, roster)
+  end
   self.State = _deepCopy(self.DefaultState)
   local loaded = self:LoadState()
+  if roster then
+    if self:ApplyPilotRoster(self.State.Pilots, roster) then
+      self:SaveState()
+    end
+  end
   if loaded then
     local path, filename = self:_GetStateFile()
     local loc = filename

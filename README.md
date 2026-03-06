@@ -10,6 +10,7 @@ Persistent‑style squadron tracking for a Mi‑24P flight in DCS World, with si
 - Tracks pilot fatigue states: `Fresh`, `Tired`, `Exhausted`.
 - Enforces slot availability by group name.
 - Provides an F10 menu for status and basic testing.
+- Supports an optional external pilot roster file to override pilot names.
 
 ## Key Concept: Airframe Alignment
 
@@ -71,6 +72,40 @@ The state is held in `HIND_SQUADRON.State`:
 - `RecoverPilotFatigueAll()` moves fatigue back one step for all pilots.
 - In-mission events:
   - On `S_EVENT_LAND`, the landing player's fatigue is advanced if their player name matches a pilot `Name` or `Id`.
+
+### Pilot Roster Override (Optional)
+
+If the file below exists, pilot names are overridden at mission start:
+
+- `Saved Games\DCS\HindSquadronPilots.lua`
+
+This file must return a Lua table in one of these formats:
+
+```lua
+-- Array of names (maps to PILOT-01..PILOT-06 by index)
+return { "Viper", "Bear", "Saber", "Cobalt", "Rook", "Mako" }
+```
+
+```lua
+-- Array of objects
+return {
+  { Id = "PILOT-01", Name = "Viper" },
+  { Id = "PILOT-02", Name = "Bear" },
+}
+```
+
+```lua
+-- Map of Id -> Name
+return {
+  ["PILOT-01"] = "Viper",
+  ["PILOT-02"] = "Bear",
+}
+```
+
+Notes:
+
+- If the roster file is present, names are applied to the current state and saved.
+- This requires `io` and `lfs` to be desanitized (same as persistence).
 
 ### Supply
 
