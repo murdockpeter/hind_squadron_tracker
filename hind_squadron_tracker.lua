@@ -40,6 +40,13 @@ HIND_SQUADRON.DAMAGE = {
   DESTROYED = "Destroyed",
 }
 
+HIND_SQUADRON.DAMAGE_COST = {
+  Minor = 1,
+  Major = 2,
+  Destroyed = 0,
+  OK = 0,
+}
+
 HIND_SQUADRON.FATIGUE = {
   FRESH = "Fresh",
   TIRED = "Tired",
@@ -164,6 +171,17 @@ local function _findById(list, id)
   return nil, nil
 end
 
+local function _findPilotByName(list, name)
+  if not name then return nil end
+  local lname = string.lower(name)
+  for _, item in ipairs(list) do
+    if string.lower(item.Name) == lname or string.lower(item.Id) == lname then
+      return item
+    end
+  end
+  return nil
+end
+
 local function _clamp(n, lo, hi)
   if n < lo then return lo end
   if n > hi then return hi end
@@ -273,6 +291,16 @@ function HIND_SQUADRON:IsAirframeFlyable(id)
   return (af.Damage ~= self.DAMAGE.DESTROYED and af.Damage ~= self.DAMAGE.MAJOR)
 end
 
+function HIND_SQUADRON:_WorseDamage(current, incoming)
+  local order = {
+    [self.DAMAGE.OK] = 0,
+    [self.DAMAGE.MINOR] = 1,
+    [self.DAMAGE.MAJOR] = 2,
+    [self.DAMAGE.DESTROYED] = 3,
+  }
+  return order[incoming] > (order[current] or 0)
+end
+
 ----------------------------------------------------------------------
 -- CORE: PILOTS
 ----------------------------------------------------------------------
@@ -310,6 +338,15 @@ function HIND_SQUADRON:ApplySortieFatigue(pilotId, suppressSave)
   end
   if not suppressSave then self:SaveState() end
   return true
+end
+
+function HIND_SQUADRON:ApplySortieFatigueByPlayerName(playerName, suppressSave)
+  local p = _findPilotByName(self.State.Pilots, playerName)
+  if not p then
+    env.info(("HIND_SQUADRON: no pilot match for player '%s'"):format(tostring(playerName)))
+    return false
+  end
+  return self:ApplySortieFatigue(p.Id, suppressSave)
 end
 
 -- Simple recovery when advancing turns (sleep/rotation)
@@ -351,6 +388,17 @@ function HIND_SQUADRON:AdvanceTurn()
 
   -- MVP: fatigue recovery happens between turns.
   self:RecoverPilotFatigueAll(true)
+
+  -- MVP: repair damaged airframes using supply points.
+  for _, af in ipairs(self.State.Airframes) do
+    if af.Damage == self.DAMAGE.MINOR or af.Damage == self.DAMAGE.MAJOR then
+      local cost = self.DAMAGE_COST[af.Damage] or 0
+      if self.State.SupplyPoints >= cost then
+        self:SpendSupply(cost, true)
+        af.Damage = self.DAMAGE.OK
+      end
+    end
+  end
 
   -- MVP: small resupply drip each turn (tune to taste)
   self:AddSupply(2, true)
@@ -406,7 +454,7 @@ end
 HIND_SQUADRON._DcsEventHandler = {}
 
 function HIND_SQUADRON._DcsEventHandler:onEvent(event)
-  if event.id ~= world.event.S_EVENT_BIRTH then return end
+  if not event or not event.id then return end
   if not event.initiator then return end
 
   local unit = event.initiator
@@ -418,17 +466,52 @@ function HIND_SQUADRON._DcsEventHandler:onEvent(event)
   local groupName = group:getName()
   if not groupName then return end
 
-  -- Only enforce for our tracked Hinds (group name must match airframe Id)
+  -- Only enforce/track for our tracked Hinds (group name must match airframe Id)
   local af = HIND_SQUADRON:GetAirframe(groupName)
   if not af then return end
 
-  local down = (af.Damage == HIND_SQUADRON.DAMAGE.DESTROYED) or (af.Damage == HIND_SQUADRON.DAMAGE.MAJOR)
-  if down then
-    trigger.action.outText(
-      ("CAMPAIGN: %s is %s and is unavailable this turn."):format(groupName, af.Damage),
-      10
-    )
-    group:destroy()
+  if event.id == world.event.S_EVENT_BIRTH then
+    local down = (af.Damage == HIND_SQUADRON.DAMAGE.DESTROYED) or (af.Damage == HIND_SQUADRON.DAMAGE.MAJOR)
+    if down then
+      trigger.action.outText(
+        ("CAMPAIGN: %s is %s and is unavailable this turn."):format(groupName, af.Damage),
+        10
+      )
+      group:destroy()
+    end
+    return
+  end
+
+  if event.id == world.event.S_EVENT_LAND then
+    local playerName = unit.getPlayerName and unit:getPlayerName()
+    if playerName then
+      HIND_SQUADRON:ApplySortieFatigueByPlayerName(playerName)
+    end
+    return
+  end
+
+  if event.id == world.event.S_EVENT_DEAD or event.id == world.event.S_EVENT_CRASH then
+    if HIND_SQUADRON:_WorseDamage(af.Damage, HIND_SQUADRON.DAMAGE.DESTROYED) then
+      HIND_SQUADRON:SetAirframeDamage(groupName, HIND_SQUADRON.DAMAGE.DESTROYED)
+    end
+    return
+  end
+
+  if event.id == world.event.S_EVENT_HIT or event.id == world.event.S_EVENT_DAMAGE then
+    local life = unit:getLife()
+    local life0 = unit:getLife0()
+    if life and life0 and life0 > 0 then
+      local ratio = life / life0
+      local incoming = (ratio <= 0.5) and HIND_SQUADRON.DAMAGE.MAJOR or HIND_SQUADRON.DAMAGE.MINOR
+      if HIND_SQUADRON:_WorseDamage(af.Damage, incoming) then
+        HIND_SQUADRON:SetAirframeDamage(groupName, incoming)
+      end
+    else
+      if HIND_SQUADRON:_WorseDamage(af.Damage, HIND_SQUADRON.DAMAGE.MINOR) then
+        HIND_SQUADRON:SetAirframeDamage(groupName, HIND_SQUADRON.DAMAGE.MINOR)
+      end
+    end
+    return
   end
 end
 

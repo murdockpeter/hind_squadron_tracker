@@ -60,17 +60,24 @@ The state is held in `HIND_SQUADRON.State`:
 
 - `SetAirframeDamage(id, damage)` validates and sets a damage state.
 - `IsAirframeFlyable(id)` returns `false` if `Major` or `Destroyed`.
+- In-mission events:
+  - On `S_EVENT_HIT`/`S_EVENT_DAMAGE`, damage is set to `Minor` or `Major` based on remaining life.
+  - On `S_EVENT_DEAD`/`S_EVENT_CRASH`, damage is set to `Destroyed`.
 
 ### Pilots
 
 - `SetPilotFatigue(id, fatigue)` validates and sets fatigue state.
 - `ApplySortieFatigue(pilotId)` advances `Fresh → Tired → Exhausted`.
 - `RecoverPilotFatigueAll()` moves fatigue back one step for all pilots.
+- In-mission events:
+  - On `S_EVENT_LAND`, the landing player's fatigue is advanced if their player name matches a pilot `Name` or `Id`.
 
 ### Supply
 
 - `AddSupply(points)` adds supply (clamped to 0..999).
 - `SpendSupply(points)` subtracts supply if enough is available.
+- Repairs consume supply on `AdvanceTurn()`:
+  - `Minor` costs 1, `Major` costs 2, `Destroyed` cannot be repaired.
 
 ### Turn Advancement
 
@@ -78,6 +85,7 @@ The state is held in `HIND_SQUADRON.State`:
 
 - Increments turn.
 - Recovers pilot fatigue by one step.
+- Repairs damaged airframes if enough supply is available.
 - Adds +2 supply points.
 - Announces the change.
 
