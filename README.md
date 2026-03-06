@@ -8,6 +8,7 @@ Persistent‑style squadron tracking for a Mi‑24P flight in DCS World, with si
 - Manages supply points (abstract ammo/fuel).
 - Tracks airframe damage states: `OK`, `Minor`, `Major`, `Destroyed`.
 - Tracks pilot fatigue states: `Fresh`, `Tired`, `Exhausted`.
+- Tracks pilot status: `Alive`, `Dead`.
 - Enforces slot availability by group name.
 - Provides an F10 menu for status and basic testing.
 - Supports an optional external pilot roster file to override pilot names.

@@ -53,6 +53,11 @@ HIND_SQUADRON.FATIGUE = {
   EXHAUSTED = "Exhausted",
 }
 
+HIND_SQUADRON.PILOT_STATUS = {
+  ALIVE = "Alive",
+  DEAD = "Dead",
+}
+
 -- Persistence (Saved Games\DCS by default when lfs is available)
 HIND_SQUADRON.StateFileName = "HindSquadronState.lua"
 HIND_SQUADRON.StateFilePath = nil
@@ -81,12 +86,12 @@ HIND_SQUADRON.DefaultState = {
 
   -- 6 Pilots
   Pilots = {
-    { Id = "PILOT-01", Name = "Viper",  Fatigue = "Fresh", Notes = "" },
-    { Id = "PILOT-02", Name = "Bear",   Fatigue = "Fresh", Notes = "" },
-    { Id = "PILOT-03", Name = "Saber",  Fatigue = "Fresh", Notes = "" },
-    { Id = "PILOT-04", Name = "Cobalt", Fatigue = "Fresh", Notes = "" },
-    { Id = "PILOT-05", Name = "Rook",   Fatigue = "Fresh", Notes = "" },
-    { Id = "PILOT-06", Name = "Mako",   Fatigue = "Fresh", Notes = "" },
+    { Id = "PILOT-01", Name = "Viper",  Fatigue = "Fresh", Status = "Alive", Notes = "" },
+    { Id = "PILOT-02", Name = "Bear",   Fatigue = "Fresh", Status = "Alive", Notes = "" },
+    { Id = "PILOT-03", Name = "Saber",  Fatigue = "Fresh", Status = "Alive", Notes = "" },
+    { Id = "PILOT-04", Name = "Cobalt", Fatigue = "Fresh", Status = "Alive", Notes = "" },
+    { Id = "PILOT-05", Name = "Rook",   Fatigue = "Fresh", Status = "Alive", Notes = "" },
+    { Id = "PILOT-06", Name = "Mako",   Fatigue = "Fresh", Status = "Alive", Notes = "" },
   },
 }
 
@@ -425,6 +430,33 @@ function HIND_SQUADRON:SetPilotFatigue(id, fatigue, suppressSave)
   return true
 end
 
+function HIND_SQUADRON:SetPilotStatus(id, status, suppressSave)
+  if not _isInSet(status, self.PILOT_STATUS) then
+    env.info(("HIND_SQUADRON: invalid pilot status '%s'"):format(tostring(status)))
+    return false
+  end
+
+  local p = self:GetPilot(id)
+  if not p then
+    env.info(("HIND_SQUADRON: pilot not found '%s'"):format(tostring(id)))
+    return false
+  end
+
+  p.Status = status
+  if not suppressSave then self:SaveState() end
+  return true
+end
+
+function HIND_SQUADRON:SetPilotDeadByPlayerName(playerName, suppressSave)
+  local p = _findPilotByName(self.State.Pilots, playerName)
+  if not p then
+    env.info(("HIND_SQUADRON: no pilot match for player '%s'"):format(tostring(playerName)))
+    return false
+  end
+  if p.Status == self.PILOT_STATUS.DEAD then return false end
+  return self:SetPilotStatus(p.Id, self.PILOT_STATUS.DEAD, suppressSave)
+end
+
 -- Simple fatigue progression for “a sortie was flown”
 function HIND_SQUADRON:ApplySortieFatigue(pilotId, suppressSave)
   local p = self:GetPilot(pilotId)
@@ -527,7 +559,12 @@ function HIND_SQUADRON:BuildStatusText()
   table.insert(lines, "")
   table.insert(lines, "Pilots:")
   for _, p in ipairs(s.Pilots) do
-    table.insert(lines, ("  %s (%s) | Fatigue: %-9s"):format(p.Id, p.Name, p.Fatigue))
+    local status = p.Status or self.PILOT_STATUS.ALIVE
+    local name = p.Name
+    if status == self.PILOT_STATUS.DEAD then
+      name = name .. " (Dead)"
+    end
+    table.insert(lines, ("  %s (%s) | Fatigue: %-9s"):format(p.Id, name, p.Fatigue))
   end
 
   return table.concat(lines, "\n")
@@ -594,6 +631,10 @@ function HIND_SQUADRON._DcsEventHandler:onEvent(event)
     or event.id == world.event.S_EVENT_COLLISION
     or event.id == world.event.S_EVENT_PILOT_DEAD
   then
+    local playerName = unit.getPlayerName and unit:getPlayerName()
+    if playerName then
+      HIND_SQUADRON:SetPilotDeadByPlayerName(playerName)
+    end
     if HIND_SQUADRON:_WorseDamage(af.Damage, HIND_SQUADRON.DAMAGE.DESTROYED) then
       HIND_SQUADRON:SetAirframeDamage(groupName, HIND_SQUADRON.DAMAGE.DESTROYED)
     end
