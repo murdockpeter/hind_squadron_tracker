@@ -598,10 +598,10 @@ function HIND_SQUADRON._DcsEventHandler:onEvent(event)
   if not event.initiator then return end
 
   local unit = event.initiator
-  if not Unit.isExist(unit) then return end
+  if not unit.getGroup then return end
 
   local group = unit:getGroup()
-  if not group then return end
+  if not group or not group.getName then return end
 
   local groupName = group:getName()
   if not groupName then return end
